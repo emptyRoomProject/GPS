@@ -3,8 +3,9 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>位置情報メモ 📍</title>
+    <title>位置情報メモ 📍 (高度対応版)</title>
     <style>
+        /* CSSスタイルは前回と同じです */
         body {
             font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
             line-height: 1.6;
@@ -91,7 +92,7 @@
 <body>
 
     <div class="container">
-        <h1>位置情報メモ 📍</h1>
+        <h1>位置情報メモ 📍 (高度対応版)</h1>
 
         <div class="controls">
             <button id="getLocationBtn">1. 現在地を取得</button>
@@ -107,16 +108,16 @@
     </div>
 
     <script>
-        // --- DOM要素の取得 ---
+        // --- DOM要素の取得 (変更なし) ---
         const getLocationBtn = document.getElementById('getLocationBtn');
         const saveLocationBtn = document.getElementById('saveLocationBtn');
         const locationNameInput = document.getElementById('locationName');
         const statusDiv = document.getElementById('status');
         const locationListUl = document.getElementById('locationList');
 
-        // --- グローバル変数 ---
-        let currentPosition = null; // 取得した位置情報を一時的に保持する変数
-        const STORAGE_KEY = 'my_locations'; // localStorageのキー
+        // --- グローバル変数 (変更なし) ---
+        let currentPosition = null;
+        const STORAGE_KEY = 'my_locations_with_altitude'; // キー名を変更して以前のデータと区別
 
         // --- 関数定義 ---
 
@@ -125,7 +126,7 @@
          */
         function renderLocations() {
             const locations = JSON.parse(localStorage.getItem(STORAGE_KEY)) || [];
-            locationListUl.innerHTML = ''; // リストを一旦空にする
+            locationListUl.innerHTML = '';
 
             if (locations.length === 0) {
                 locationListUl.innerHTML = '<li>まだ記録された場所はありません。</li>';
@@ -134,11 +135,23 @@
 
             locations.forEach(location => {
                 const li = document.createElement('li');
+                
+                // --- ▼▼▼ 変更点: 高度情報の表示を追加 ▼▼▼ ---
+                let altitudeInfo = '高度: 取得不可';
+                // 高度情報がnullでない場合のみ表示を整形
+                if (location.alt !== null && location.alt !== undefined) {
+                    altitudeInfo = `高度: ${location.alt.toFixed(2)}m (精度: ±${location.altAcc}m)`;
+                }
+
                 li.innerHTML = `
                     <strong>${escapeHTML(location.name)}</strong>
-                    <div class="coords">緯度: ${location.lat}, 経度: ${location.lon} (精度: ${location.acc}m)</div>
+                    <div class="coords">
+                        緯度: ${location.lat}, 経度: ${location.lon} (精度: ${location.acc}m)<br>
+                        ${altitudeInfo}
+                    </div>
                     <div class="timestamp">${new Date(location.timestamp).toLocaleString()}</div>
                 `;
+                // --- ▲▲▲ 変更点ここまで ▲▲▲ ---
                 locationListUl.appendChild(li);
             });
         }
@@ -158,31 +171,32 @@
             navigator.geolocation.getCurrentPosition(
                 // 成功した時のコールバック
                 (position) => {
-                    currentPosition = position; // 取得した情報を保持
+                    currentPosition = position;
+                    
+                    // --- ▼▼▼ 変更点: 取得成功時の表示に高度を追加 ▼▼▼ ---
+                    const coords = position.coords;
+                    let altitudeText = '高度: 取得不可';
+                    if (coords.altitude !== null) {
+                        altitudeText = `高度: ${coords.altitude.toFixed(2)}m (精度: ±${coords.altitudeAccuracy}m)`;
+                    }
                     statusDiv.innerHTML = `
                         <b>取得成功！</b><br>
-                        緯度: ${position.coords.latitude.toFixed(6)}, 
-                        経度: ${position.coords.longitude.toFixed(6)}
+                        緯度: ${coords.latitude.toFixed(6)}, 経度: ${coords.longitude.toFixed(6)}<br>
+                        ${altitudeText}
                     `;
-                    saveLocationBtn.disabled = false; // 保存ボタンを有効化
+                    // --- ▲▲▲ 変更点ここまで ▲▲▲ ---
+
+                    saveLocationBtn.disabled = false;
                     locationNameInput.focus();
                 },
-                // 失敗した時のコールバック
+                // 失敗した時のコールバック (変更なし)
                 (error) => {
                     let errorMessage;
                     switch(error.code) {
-                        case error.PERMISSION_DENIED:
-                            errorMessage = "位置情報の利用が許可されませんでした。";
-                            break;
-                        case error.POSITION_UNAVAILABLE:
-                            errorMessage = "位置情報を取得できませんでした。";
-                            break;
-                        case error.TIMEOUT:
-                            errorMessage = "位置情報の取得がタイムアウトしました。";
-                            break;
-                        default:
-                            errorMessage = "原因不明のエラーが発生しました。";
-                            break;
+                        case error.PERMISSION_DENIED: errorMessage = "位置情報の利用が許可されませんでした。"; break;
+                        case error.POSITION_UNAVAILABLE: errorMessage = "位置情報を取得できませんでした。"; break;
+                        case error.TIMEOUT: errorMessage = "位置情報の取得がタイムアウトしました。"; break;
+                        default: errorMessage = "原因不明のエラーが発生しました。"; break;
                     }
                     statusDiv.textContent = `エラー: ${errorMessage}`;
                 }
@@ -203,55 +217,40 @@
                 return;
             }
             
-            // 保存する新しいデータを作成
+            // --- ▼▼▼ 変更点: 保存データに高度情報を追加 ▼▼▼ ---
             const newLocation = {
                 name: name,
                 lat: currentPosition.coords.latitude,
                 lon: currentPosition.coords.longitude,
                 acc: currentPosition.coords.accuracy,
-                timestamp: new Date().getTime() // 記録した日時
+                alt: currentPosition.coords.altitude, // 高度 (メートル単位)
+                altAcc: currentPosition.coords.altitudeAccuracy, // 高度の精度 (メートル単位)
+                timestamp: new Date().getTime()
             };
+            // --- ▲▲▲ 変更点ここまで ▲▲▲ ---
 
-            // 既存のデータをlocalStorageから取得し、新しいデータを追加
             const locations = JSON.parse(localStorage.getItem(STORAGE_KEY)) || [];
             locations.push(newLocation);
 
-            // localStorageに保存
             localStorage.setItem(STORAGE_KEY, JSON.stringify(locations));
             
-            // UIをリセット
             alert(`「${name}」を記録しました！`);
             locationNameInput.value = '';
             currentPosition = null;
             saveLocationBtn.disabled = true;
             statusDiv.textContent = 'ボタンを押して次の位置情報を取得してください。';
 
-            // リストを再描画
             renderLocations();
         }
-
-        /**
-         * HTMLエスケープ用の簡易関数 (XSS対策)
-         */
+        
+        // HTMLエスケープ用の簡易関数 (変更なし)
         function escapeHTML(str) {
-            return str.replace(/[&<>"']/g, function(match) {
-                return {
-                    '&': '&amp;',
-                    '<': '&lt;',
-                    '>': '&gt;',
-                    '"': '&quot;',
-                    "'": '&#39;'
-                }[match];
-            });
+            return str.replace(/[&<>"']/g, match => ({'&': '&amp;','<': '&lt;','>': '&gt;','"': '&quot;',"'": '&#39;'})[match]);
         }
 
-
-        // --- イベントリスナーの設定 ---
+        // --- イベントリスナーと初期化処理 (変更なし) ---
         getLocationBtn.addEventListener('click', getLocation);
         saveLocationBtn.addEventListener('click', saveLocation);
-        
-        // --- 初期化処理 ---
-        // ページが読み込まれた時に、保存されているデータを表示する
         document.addEventListener('DOMContentLoaded', renderLocations);
 
     </script>
