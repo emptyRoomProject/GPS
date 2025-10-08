@@ -1,0 +1,259 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>位置情報メモ 📍</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            line-height: 1.6;
+            margin: 0;
+            padding: 20px;
+            background-color: #f4f7f6;
+            color: #333;
+        }
+        .container {
+            max-width: 600px;
+            margin: 0 auto;
+            background-color: #fff;
+            padding: 25px;
+            border-radius: 8px;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.05);
+        }
+        h1, h2 {
+            border-bottom: 2px solid #5c9ce5;
+            padding-bottom: 10px;
+        }
+        .controls {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 15px;
+            flex-wrap: wrap;
+        }
+        input[type="text"] {
+            flex-grow: 1;
+            padding: 10px;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+        }
+        button {
+            padding: 10px 15px;
+            border: none;
+            border-radius: 4px;
+            color: white;
+            background-color: #5c9ce5;
+            cursor: pointer;
+            transition: background-color 0.2s;
+        }
+        button:hover {
+            background-color: #4a8ad4;
+        }
+        button:disabled {
+            background-color: #ccc;
+            cursor: not-allowed;
+        }
+        #status {
+            padding: 10px;
+            background-color: #eef5fd;
+            border-radius: 4px;
+            margin-top: 15px;
+            word-wrap: break-word;
+        }
+        #locationList {
+            list-style-type: none;
+            padding: 0;
+        }
+        #locationList li {
+            background-color: #fff;
+            padding: 15px;
+            border: 1px solid #eee;
+            border-radius: 4px;
+            margin-bottom: 10px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.03);
+        }
+        #locationList li strong {
+            font-size: 1.1em;
+            color: #5c9ce5;
+        }
+        #locationList li .coords {
+            font-size: 0.9em;
+            color: #666;
+            font-family: monospace;
+        }
+        #locationList li .timestamp {
+            font-size: 0.8em;
+            color: #999;
+            margin-top: 5px;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="container">
+        <h1>位置情報メモ 📍</h1>
+
+        <div class="controls">
+            <button id="getLocationBtn">1. 現在地を取得</button>
+            <input type="text" id="locationName" placeholder="場所の名前を入力">
+            <button id="saveLocationBtn" disabled>2. この場所を記録</button>
+        </div>
+        
+        <p id="status">ボタンを押して位置情報を取得してください。</p>
+
+        <h2>記録した場所一覧</h2>
+        <ul id="locationList">
+            </ul>
+    </div>
+
+    <script>
+        // --- DOM要素の取得 ---
+        const getLocationBtn = document.getElementById('getLocationBtn');
+        const saveLocationBtn = document.getElementById('saveLocationBtn');
+        const locationNameInput = document.getElementById('locationName');
+        const statusDiv = document.getElementById('status');
+        const locationListUl = document.getElementById('locationList');
+
+        // --- グローバル変数 ---
+        let currentPosition = null; // 取得した位置情報を一時的に保持する変数
+        const STORAGE_KEY = 'my_locations'; // localStorageのキー
+
+        // --- 関数定義 ---
+
+        /**
+         * localStorageからデータを読み込み、リストを再描画する
+         */
+        function renderLocations() {
+            const locations = JSON.parse(localStorage.getItem(STORAGE_KEY)) || [];
+            locationListUl.innerHTML = ''; // リストを一旦空にする
+
+            if (locations.length === 0) {
+                locationListUl.innerHTML = '<li>まだ記録された場所はありません。</li>';
+                return;
+            }
+
+            locations.forEach(location => {
+                const li = document.createElement('li');
+                li.innerHTML = `
+                    <strong>${escapeHTML(location.name)}</strong>
+                    <div class="coords">緯度: ${location.lat}, 経度: ${location.lon} (精度: ${location.acc}m)</div>
+                    <div class="timestamp">${new Date(location.timestamp).toLocaleString()}</div>
+                `;
+                locationListUl.appendChild(li);
+            });
+        }
+
+        /**
+         * 位置情報を取得する
+         */
+        function getLocation() {
+            if (!navigator.geolocation) {
+                statusDiv.textContent = 'お使いのブラウザは位置情報取得に対応していません。';
+                return;
+            }
+
+            statusDiv.textContent = '位置情報を取得中...';
+            saveLocationBtn.disabled = true;
+
+            navigator.geolocation.getCurrentPosition(
+                // 成功した時のコールバック
+                (position) => {
+                    currentPosition = position; // 取得した情報を保持
+                    statusDiv.innerHTML = `
+                        <b>取得成功！</b><br>
+                        緯度: ${position.coords.latitude.toFixed(6)}, 
+                        経度: ${position.coords.longitude.toFixed(6)}
+                    `;
+                    saveLocationBtn.disabled = false; // 保存ボタンを有効化
+                    locationNameInput.focus();
+                },
+                // 失敗した時のコールバック
+                (error) => {
+                    let errorMessage;
+                    switch(error.code) {
+                        case error.PERMISSION_DENIED:
+                            errorMessage = "位置情報の利用が許可されませんでした。";
+                            break;
+                        case error.POSITION_UNAVAILABLE:
+                            errorMessage = "位置情報を取得できませんでした。";
+                            break;
+                        case error.TIMEOUT:
+                            errorMessage = "位置情報の取得がタイムアウトしました。";
+                            break;
+                        default:
+                            errorMessage = "原因不明のエラーが発生しました。";
+                            break;
+                    }
+                    statusDiv.textContent = `エラー: ${errorMessage}`;
+                }
+            );
+        }
+
+        /**
+         * 現在の位置情報を保存する
+         */
+        function saveLocation() {
+            const name = locationNameInput.value.trim();
+            if (!name) {
+                alert('場所の名前を入力してください。');
+                return;
+            }
+            if (!currentPosition) {
+                alert('先に位置情報を取得してください。');
+                return;
+            }
+            
+            // 保存する新しいデータを作成
+            const newLocation = {
+                name: name,
+                lat: currentPosition.coords.latitude,
+                lon: currentPosition.coords.longitude,
+                acc: currentPosition.coords.accuracy,
+                timestamp: new Date().getTime() // 記録した日時
+            };
+
+            // 既存のデータをlocalStorageから取得し、新しいデータを追加
+            const locations = JSON.parse(localStorage.getItem(STORAGE_KEY)) || [];
+            locations.push(newLocation);
+
+            // localStorageに保存
+            localStorage.setItem(STORAGE_KEY, JSON.stringify(locations));
+            
+            // UIをリセット
+            alert(`「${name}」を記録しました！`);
+            locationNameInput.value = '';
+            currentPosition = null;
+            saveLocationBtn.disabled = true;
+            statusDiv.textContent = 'ボタンを押して次の位置情報を取得してください。';
+
+            // リストを再描画
+            renderLocations();
+        }
+
+        /**
+         * HTMLエスケープ用の簡易関数 (XSS対策)
+         */
+        function escapeHTML(str) {
+            return str.replace(/[&<>"']/g, function(match) {
+                return {
+                    '&': '&amp;',
+                    '<': '&lt;',
+                    '>': '&gt;',
+                    '"': '&quot;',
+                    "'": '&#39;'
+                }[match];
+            });
+        }
+
+
+        // --- イベントリスナーの設定 ---
+        getLocationBtn.addEventListener('click', getLocation);
+        saveLocationBtn.addEventListener('click', saveLocation);
+        
+        // --- 初期化処理 ---
+        // ページが読み込まれた時に、保存されているデータを表示する
+        document.addEventListener('DOMContentLoaded', renderLocations);
+
+    </script>
+</body>
+</html>
